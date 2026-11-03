@@ -45,10 +45,10 @@ export interface IPreciSignRepository {
   createRequest(record: RequestRecord): Promise<RequestRecord>;
   updateRequest(record: RequestRecord): Promise<RequestRecord>;
 
-  // Drafts
-  getDraft(companyId: CompanyId, formType: string): Promise<Partial<AdminWorkFormData> | null>;
-  saveDraft(companyId: CompanyId, formType: string, draft: Partial<AdminWorkFormData>): Promise<void>;
-  clearDraft(companyId: CompanyId, formType: string): Promise<void>;
+  // Drafts scoped by company, requester, and document type
+  getDraft(companyId: CompanyId, requesterId: string, formType: string): Promise<Partial<AdminWorkFormData> | null>;
+  saveDraft(companyId: CompanyId, requesterId: string, formType: string, draft: Partial<AdminWorkFormData>): Promise<void>;
+  clearDraft(companyId: CompanyId, requesterId: string, formType: string): Promise<void>;
 
   // Session / Demo Preferences
   getDemoSession(): Promise<{ companyId: CompanyId; userId: string }>;
@@ -223,22 +223,31 @@ export class LocalStoragePreciSignRepository implements IPreciSignRepository {
     return record;
   }
 
-  async getDraft(companyId: CompanyId, formType: string): Promise<Partial<AdminWorkFormData> | null> {
-    const key = `${STORAGE_KEYS.DRAFTS_PREFIX}${companyId}_${formType}`;
+  async getDraft(
+    companyId: CompanyId,
+    requesterId: string,
+    formType: string
+  ): Promise<Partial<AdminWorkFormData> | null> {
+    const key = `${STORAGE_KEYS.DRAFTS_PREFIX}${companyId}_${requesterId}_${formType}`;
     return this.getItem<Partial<AdminWorkFormData> | null>(key, null);
   }
 
   async saveDraft(
     companyId: CompanyId,
+    requesterId: string,
     formType: string,
     draft: Partial<AdminWorkFormData>
   ): Promise<void> {
-    const key = `${STORAGE_KEYS.DRAFTS_PREFIX}${companyId}_${formType}`;
+    const key = `${STORAGE_KEYS.DRAFTS_PREFIX}${companyId}_${requesterId}_${formType}`;
     this.setItem(key, draft);
   }
 
-  async clearDraft(companyId: CompanyId, formType: string): Promise<void> {
-    const key = `${STORAGE_KEYS.DRAFTS_PREFIX}${companyId}_${formType}`;
+  async clearDraft(
+    companyId: CompanyId,
+    requesterId: string,
+    formType: string
+  ): Promise<void> {
+    const key = `${STORAGE_KEYS.DRAFTS_PREFIX}${companyId}_${requesterId}_${formType}`;
     this.removeItem(key);
   }
 

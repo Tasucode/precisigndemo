@@ -95,18 +95,25 @@ test('LocalStoragePreciSignRepository updates user signatures safely', async () 
   assert.equal(updated?.signatureStyleText, 'Anzar Styled');
 });
 
-test('LocalStoragePreciSignRepository saves, gets, and clears drafts', async () => {
+test('LocalStoragePreciSignRepository scopes drafts by company, user, and form type', async () => {
   const mock = new MockStorage();
   const repo = new LocalStoragePreciSignRepository(mock);
 
-  await repo.saveDraft('PEW', 'Admin Work Request', {
-    workDescription: 'Draft renovation details',
+  // Anzar saves draft
+  await repo.saveDraft('PEW', 'user-anzar', 'Admin Work Request', {
+    workDescription: 'Anzar draft renovation details',
   });
 
-  const draft = await repo.getDraft('PEW', 'Admin Work Request');
-  assert.equal(draft?.workDescription, 'Draft renovation details');
+  // Anzar gets his draft
+  const anzarDraft = await repo.getDraft('PEW', 'user-anzar', 'Admin Work Request');
+  assert.equal(anzarDraft?.workDescription, 'Anzar draft renovation details');
 
-  await repo.clearDraft('PEW', 'Admin Work Request');
-  const cleared = await repo.getDraft('PEW', 'Admin Work Request');
+  // Shekar switches in - must NOT see Anzar's draft
+  const shekarDraft = await repo.getDraft('PEW', 'user-shekar', 'Admin Work Request');
+  assert.equal(shekarDraft, null);
+
+  // Clearing Anzar's draft
+  await repo.clearDraft('PEW', 'user-anzar', 'Admin Work Request');
+  const cleared = await repo.getDraft('PEW', 'user-anzar', 'Admin Work Request');
   assert.equal(cleared, null);
 });

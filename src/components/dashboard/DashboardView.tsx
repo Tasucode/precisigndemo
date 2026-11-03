@@ -255,11 +255,16 @@ export const DashboardView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* Form 1 */}
+          {/* Form 1: Payment Request */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:shadow-md transition-shadow">
             <div>
-              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
-                <CreditCard className="w-4 h-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                  Catalog • In Prep
+                </span>
               </div>
               <h3 className="text-xs font-bold text-slate-900 leading-snug">
                 Payment Request Form
@@ -277,19 +282,22 @@ export const DashboardView: React.FC = () => {
             </button>
           </div>
 
-          {/* Form 2: Admin Work Request Form (Fully implemented) */}
+          {/* Form 2: Admin Work Request Form (Active Official Release) */}
           <div className="bg-white border-2 border-purple-200 rounded-xl p-4 flex flex-col justify-between hover:shadow-md transition-shadow relative ring-1 ring-purple-100">
             <div>
-              <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center mb-3">
-                <ClipboardList className="w-4 h-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <ClipboardList className="w-4 h-4" />
+                </div>
+                <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                  Official PR#21-001FA
+                </span>
               </div>
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-900 leading-snug">
-                  Admin Work Request Form
-                </h3>
-              </div>
+              <h3 className="text-xs font-bold text-slate-900 leading-snug">
+                Admin Work Request Form
+              </h3>
               <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                Request for administrative work (e.g., new employee setup, documents, visits, etc.).
+                Official bilingual administrative request form (PR#21-001FA) with full workflow &amp; e-sign.
               </p>
             </div>
             <button
@@ -301,11 +309,16 @@ export const DashboardView: React.FC = () => {
             </button>
           </div>
 
-          {/* Form 3 */}
+          {/* Form 3: IT Request */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:shadow-md transition-shadow">
             <div>
-              <div className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center mb-3">
-                <Monitor className="w-4 h-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center">
+                  <Monitor className="w-4 h-4" />
+                </div>
+                <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                  Catalog • In Prep
+                </span>
               </div>
               <h3 className="text-xs font-bold text-slate-900 leading-snug">
                 IT Request Form
@@ -323,11 +336,16 @@ export const DashboardView: React.FC = () => {
             </button>
           </div>
 
-          {/* Form 4 */}
+          {/* Form 4: IT Asset Allocation */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:shadow-md transition-shadow">
             <div>
-              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
-                <Laptop className="w-4 h-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Laptop className="w-4 h-4" />
+                </div>
+                <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                  Catalog • In Prep
+                </span>
               </div>
               <h3 className="text-xs font-bold text-slate-900 leading-snug">
                 IT Asset Allocation Form
@@ -345,11 +363,16 @@ export const DashboardView: React.FC = () => {
             </button>
           </div>
 
-          {/* Form 5 */}
+          {/* Form 5: Undertaking Guarantee */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:shadow-md transition-shadow">
             <div>
-              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center mb-3">
-                <FileCheck className="w-4 h-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <FileCheck className="w-4 h-4" />
+                </div>
+                <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                  Catalog • In Prep
+                </span>
               </div>
               <h3 className="text-xs font-bold text-slate-900 leading-snug">
                 Undertaking – Guarantee Letter

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { AdminWorkFormData, PriorityLevel } from '../../types/index';
+import { AdminWorkFormData, PriorityLevel, AttachmentItem } from '../../types/index';
 import { AdminWorkRequestDocument } from '../document/AdminWorkRequestDocument';
 import { SignatureModal } from '../modals/SignatureModal';
 import {
@@ -15,6 +15,9 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
+  Paperclip,
+  Upload,
+  Trash2,
 } from 'lucide-react';
 
 export const CreateRequestView: React.FC = () => {
@@ -69,6 +72,7 @@ export const CreateRequestView: React.FC = () => {
     }
   );
 
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [autoPreview, setAutoPreview] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [signatureModalOpen, setSignatureModalOpen] = useState(false);
@@ -86,7 +90,9 @@ export const CreateRequestView: React.FC = () => {
     });
   }, [dateOfRequest, department, priority, workDescription, documents]);
 
-  // Construct active document preview data
+  // Construct active document preview data:
+  // Note: Requester signature is intentionally undefined before submission confirmation
+  // to prevent displaying a completed cursive signature on draft forms.
   const previewData: AdminWorkFormData = {
     dateOfRequest,
     companyId: selectedCompany.id,
@@ -97,12 +103,10 @@ export const CreateRequestView: React.FC = () => {
     priority,
     workDescription,
     documents,
-    requesterSignatureName: currentUser.name,
-    requesterSignatureDataUrl: currentUser.signatureDataUrl,
-    approvalAuthoritySignatureName:
-      currentWorkflow.stages.find((s) => s.isFinalApproval)?.assignedRole === 'Director'
-        ? 'Afzal Kazi'
-        : 'Authorized Signatory',
+    requesterSignatureName: undefined,
+    requesterSignatureDataUrl: undefined,
+    approvalAuthoritySignatureName: undefined,
+    approvalAuthoritySignatureDataUrl: undefined,
   };
 
   const handleDocumentToggle = (key: keyof typeof documents) => {
@@ -112,10 +116,47 @@ export const CreateRequestView: React.FC = () => {
     }));
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const sizeFormatted =
+          file.size > 1024 * 1024
+            ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+            : `${Math.round(file.size / 1024)} KB`;
+
+        const newAtt: AttachmentItem = {
+          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          name: file.name,
+          sizeBytes: file.size,
+          sizeFormatted,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: currentUser.name,
+          mimeType: file.type || 'application/octet-stream',
+          dataUrl,
+        };
+
+        setAttachments((prev) => [...prev, newAtt]);
+      };
+      reader.readAsDataURL(file);
+    });
+    // Reset file input
+    e.target.value = '';
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
   const handleClear = () => {
     if (confirm('Are you sure you want to clear the form entries?')) {
       clearDraft();
       setWorkDescription('');
+      setAttachments([]);
       setDocuments({
         onlineDocumentChamber: false,
         physicalDocumentChamber: false,
@@ -146,18 +187,10 @@ export const CreateRequestView: React.FC = () => {
   const handleConfirmedSubmit = (signatureDataUrl: string) => {
     const result = submitNewRequest(
       previewData,
-      [
-        {
-          id: `att-${Date.now()}`,
-          name: 'Renovation_Scope_Proposal.pdf',
-          sizeBytes: 1258291,
-          sizeFormatted: '1.2 MB',
-          uploadedAt: new Date().toISOString(),
-          uploadedBy: currentUser.name,
-          mimeType: 'application/pdf',
-        },
-      ],
-      'Request submitted with initial quote attachments.',
+      attachments,
+      attachments.length > 0
+        ? `Request submitted with ${attachments.length} supporting attachment(s).`
+        : 'Request submitted.',
       signatureDataUrl
     );
 
@@ -483,6 +516,58 @@ export const CreateRequestView: React.FC = () => {
             </div>
           </div>
 
+          {/* Section: Supporting Attachments (Upload & Management) */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-purple-700 flex items-center gap-1.5">
+                <Paperclip className="w-3.5 h-3.5" />
+                <span>Supporting Attachments ({attachments.length})</span>
+              </h2>
+              <label className="cursor-pointer text-xs font-semibold text-purple-600 hover:text-purple-700 flex items-center gap-1 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-lg border border-purple-200 transition-colors">
+                <Upload className="w-3 h-3" />
+                <span>Add Files</span>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </label>
+            </div>
+
+            {attachments.length === 0 ? (
+              <div className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-center text-xs text-slate-500">
+                No attachments added. Upload quotes, specifications, or reference files (optional).
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {attachments.map((att) => (
+                  <div
+                    key={att.id}
+                    className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded uppercase">
+                        {att.name.split('.').pop() || 'FILE'}
+                      </span>
+                      <span className="font-medium text-slate-800 truncate">{att.name}</span>
+                      <span className="text-[10px] text-slate-400">({att.sizeFormatted})</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(att.id)}
+                      className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
+                      title="Remove attachment"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Section: Signatures Preview */}
           <div className="space-y-3 pt-2 border-t border-slate-100">
             <h2 className="text-xs font-bold uppercase tracking-wider text-purple-700">
@@ -496,7 +581,7 @@ export const CreateRequestView: React.FC = () => {
                 <input
                   type="text"
                   readOnly
-                  value={currentUser.name}
+                  value={`${currentUser.name} (Upon submission)`}
                   className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium cursor-not-allowed"
                 />
               </div>
@@ -508,7 +593,7 @@ export const CreateRequestView: React.FC = () => {
                 <input
                   type="text"
                   readOnly
-                  value="Afzal Kazi"
+                  value="Pending Workflow Approval"
                   className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 italic cursor-not-allowed"
                 />
               </div>
@@ -550,7 +635,7 @@ export const CreateRequestView: React.FC = () => {
             <button
               type="button"
               onClick={handleTriggerSubmit}
-              className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
               <span>Submit Request</span>
@@ -565,7 +650,7 @@ export const CreateRequestView: React.FC = () => {
           }`}
         >
           {/* Preview Toolbar */}
-          <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-xs">
+          <div className="no-print bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-xs">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-800">Form Preview (Print Format)</span>
               <span className="text-[10px] text-purple-600 font-semibold bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
@@ -585,26 +670,15 @@ export const CreateRequestView: React.FC = () => {
                 />
               </label>
 
-              {/* Print */}
+              {/* Print / Save as PDF */}
               <button
                 type="button"
                 onClick={handlePrint}
-                className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50"
-                title="Print official document"
+                className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                title="Print or Save as PDF via browser print dialog"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print</span>
-              </button>
-
-              {/* Download */}
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50"
-                title="Download / Save as PDF"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
+                <span>Print / Save as PDF (A4)</span>
               </button>
 
               {/* Fullscreen */}

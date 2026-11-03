@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { WorkflowConfig, WorkflowStageConfig, UserRole, CompanyId } from '../../types/index';
 import {
@@ -23,11 +23,15 @@ export const WorkflowSettingsView: React.FC = () => {
     workflows,
     saveWorkflow,
     users,
+    currentUser,
   } = useApp();
 
   const [searchForm, setSearchForm] = useState('');
   const [selectedFormName, setSelectedFormName] = useState<string>('Admin Work Request');
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const isAdmin = currentUser.role === 'Admin';
 
   // Active workflow for selected form and company
   const activeWf =
@@ -37,19 +41,17 @@ export const WorkflowSettingsView: React.FC = () => {
   // Local editing state for current workflow
   const [wfConfig, setWfConfig] = useState<WorkflowConfig>(activeWf);
 
-  // Sync if selectedFormName or company changes
-  const handleSelectForm = (formType: string) => {
-    setSelectedFormName(formType);
+  // Synchronize workflow state when changing company, form, or repository workflows
+  useEffect(() => {
     const found = workflows.find(
-      (w) => w.companyId === selectedCompanyId && w.formType === formType
+      (w) => w.companyId === selectedCompanyId && w.formType === selectedFormName
     );
     if (found) {
       setWfConfig(found);
     } else {
-      // Default template
       setWfConfig({
-        id: `wf-${selectedCompanyId.toLowerCase()}-${formType.toLowerCase().replace(/\s+/g, '-')}`,
-        formType,
+        id: `wf-${selectedCompanyId.toLowerCase()}-${selectedFormName.toLowerCase().replace(/\s+/g, '-')}`,
+        formType: selectedFormName,
         companyId: selectedCompanyId,
         version: 1,
         stages: [
@@ -82,6 +84,11 @@ export const WorkflowSettingsView: React.FC = () => {
         returnBehavior: 'restart_workflow',
       });
     }
+  }, [selectedCompanyId, selectedFormName, workflows]);
+
+  const handleSelectForm = (formType: string) => {
+    setSelectedFormName(formType);
+    setValidationError(null);
   };
 
   const formsList = [
@@ -162,6 +169,39 @@ export const WorkflowSettingsView: React.FC = () => {
   };
 
   const handleSaveAndActivate = () => {
+    setValidationError(null);
+    if (!isAdmin) {
+      setValidationError('Permission denied: Only administrators (Anzar) can save or activate workflows.');
+      return;
+    }
+
+    if (!wfConfig.stages || wfConfig.stages.length < 1) {
+      setValidationError('Validation error: Workflow must include at least one approval stage.');
+      return;
+    }
+
+    const emptyStageName = wfConfig.stages.find((s) => !s.name || !s.name.trim());
+    if (emptyStageName) {
+      setValidationError('Validation error: Every approval stage must have a non-empty name.');
+      return;
+    }
+
+    const finalStages = wfConfig.stages.filter((s) => s.isFinalApproval);
+    if (finalStages.length !== 1) {
+      setValidationError(
+        `Validation error: Exactly one stage must be designated as 'Final Required Approval' (found ${finalStages.length}).`
+      );
+      return;
+    }
+
+    const signatureMappedStages = wfConfig.stages.filter((s) => s.mapsToDocumentSignature);
+    if (signatureMappedStages.length !== 1) {
+      setValidationError(
+        `Validation error: Exactly one stage must be designated as 'Maps to Document Sig' for legal document execution (found ${signatureMappedStages.length}).`
+      );
+      return;
+    }
+
     const updated = {
       ...wfConfig,
       version: wfConfig.version + 1,
@@ -202,12 +242,42 @@ export const WorkflowSettingsView: React.FC = () => {
 
         <button
           onClick={handleSaveAndActivate}
-          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+          disabled={!isAdmin}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors ${
+            isAdmin
+              ? 'bg-purple-600 hover:bg-purple-700 text-white cursor-pointer'
+              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+          }`}
+          title={!isAdmin ? 'Admin permission required to save' : 'Save and activate new workflow version'}
         >
           <Save className="w-3.5 h-3.5" />
           <span>Save &amp; Activate Workflow</span>
         </button>
       </div>
+
+      {/* Role Notice */}
+      {!isAdmin && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-bold uppercase tracking-wider text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded">
+              Read-Only
+            </span>
+            <span>
+              You are logged in as <strong>{currentUser.name}</strong> ({currentUser.role}). Only administrators (e.g. Anzar) can edit and activate workflow configurations. Switch to Anzar using the top-right persona selector to modify settings.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Error Notice */}
+      {validationError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center justify-between">
+          <span>{validationError}</span>
+          <button onClick={() => setValidationError(null)} className="font-bold">
+            ✕
+          </button>
+        </div>
+      )}
 
       {saveFeedback && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-center gap-2">

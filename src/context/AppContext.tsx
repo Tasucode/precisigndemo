@@ -122,7 +122,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedCompanyIdState(session.companyId);
       setCurrentUserIdState(session.userId);
 
-      const draft = await dataService.getDraft(session.companyId, 'Admin Work Request');
+      const draft = await dataService.getDraft(session.companyId, session.userId, 'Admin Work Request');
       if (mounted) {
         setDraftFormData(draft);
       }
@@ -136,13 +136,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setSelectedCompanyId = (id: CompanyId) => {
     setSelectedCompanyIdState(id);
     dataService.saveDemoSession(id, currentUserId);
-    // Load company draft
-    dataService.getDraft(id, 'Admin Work Request').then((draft) => setDraftFormData(draft));
+    // Load company draft scoped to current user
+    dataService.getDraft(id, currentUserId, 'Admin Work Request').then((draft) => setDraftFormData(draft));
   };
 
   const setCurrentUserId = (id: string) => {
     setCurrentUserIdState(id);
     dataService.saveDemoSession(selectedCompanyId, id);
+    // Load draft scoped to newly selected persona
+    dataService.getDraft(selectedCompanyId, id, 'Admin Work Request').then((draft) => setDraftFormData(draft));
   };
 
   const updateUserSignature = async (
@@ -200,12 +202,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const saveDraft = (data: Partial<AdminWorkFormData>) => {
     setDraftFormData(data);
-    dataService.saveDraft(selectedCompanyId, 'Admin Work Request', data);
+    dataService.saveDraft(selectedCompanyId, currentUser.id, 'Admin Work Request', data);
   };
 
   const clearDraft = () => {
     setDraftFormData(null);
-    dataService.clearDraft(selectedCompanyId, 'Admin Work Request');
+    dataService.clearDraft(selectedCompanyId, currentUser.id, 'Admin Work Request');
   };
 
   const openReviewRequest = (requestId: string) => {
@@ -213,7 +215,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveView('review-sign');
   };
 
-  // Submit new request
+  // Submit new request with collision-resistant unique identifier
   const submitNewRequest = (
     formData: AdminWorkFormData,
     attachments: AttachmentItem[] = [],
@@ -223,7 +225,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const year = new Date().getFullYear();
     const count = requests.filter((r) => r.companyId === selectedCompanyId).length + 1;
     const padded = String(count).padStart(4, '0');
-    const newId = `${selectedCompanyId}-AW-${year}-${padded}`;
+    // Collision-resistant suffix prevents ID conflicts in concurrent sessions
+    const entropy = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const newId = `${selectedCompanyId}-AW-${year}-${padded}-${entropy}`;
 
     const newRecord = createNewRequestRecord({
       id: newId,

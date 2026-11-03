@@ -1,310 +1,198 @@
-# PreciSign — Backend & Infrastructure Handoff Specification
+# PreciSign — Backend Handoff & Architecture Guide
 
-## 1. Executive Summary & Architecture Overview
-
-**PreciSign** is an enterprise document approval, bilingual workflow routing, and e-signing platform built specifically for **Precision Engineering Group (Saudi Arabia)** and its operating subsidiaries:
-- **PEW** — Precision Engineering Works
-- **ICCL**
-- **Flexi Seal Gasket (FSG)**
-
-### Architectural Decoupling
-The frontend client has been engineered with strict layer separation:
-1. **Domain Interfaces (`/src/types/index.ts`)**: Complete typing for tenants, personas, workflow stages, version histories, and the official bilingual **Admin Work Request Form (PR#21-001FA)**.
-2. **Pure Workflow Engine (`/src/utils/workflowEngine.ts`)**: Pure, decoupled state machine covering submission, sequential multi-stage approvals, return for correction, resubmission version increments (V1 -> V2), director overrides, and rejections.
-3. **Repository Abstraction (`/src/services/repository.ts`)**: High-level interface `IPreciSignRepository`. The current prototype uses `LocalStoragePreciSignRepository` solely behind this abstraction. Replacing local storage with a real REST/GraphQL API requires zero modifications to React components or UI views.
-4. **Single Source of Truth Document Renderer (`/src/components/document/AdminWorkRequestDocument.tsx`)**: Reusable component serving interactive creation preview, approver review, printable layout, and archived audit records.
+## 1. Scope & System Profile
+- **Target Organization**: Precision Engineering Group (Saudi Arabia) — Operating across subsidiaries PEW, ICCL, and FSG.
+- **Scale**: Internal operational tool for approximately 20 to 50 active users (requesters, department heads, GM, and Director).
+- **Hosting Strategy**: Free-tier-first. Fully deployable on Google Cloud Run (Node.js/Express or Python FastAPI) with Cloud SQL (PostgreSQL free tier / scale-to-zero) or Supabase/Neon PostgreSQL free tier.
+- **Architectural Boundary**: The frontend is completely decoupled. UI components communicate with the data layer via the `IPreciSignRepository` interface (`src/services/repository.ts`), currently backed by `LocalStoragePreciSignRepository`.
 
 ---
 
-## 2. API Contract Specification (`IPreciSignRepository`)
+## 2. Server-Authoritative Workflow Security
 
-The backend service should implement the following RESTful or GraphQL endpoints matching `IPreciSignRepository`:
+> **CRITICAL SECURITY RULE**: The server MUST calculate and enforce all workflow state transitions, timestamps, and history records. The backend must NEVER expose generic `PUT /api/requests/:id` endpoints that accept a client-supplied approval history or state payload.
 
-### 2.1 Companies & Tenants
-- `GET /api/v1/companies`
-  - **Response**: `200 OK` — `Company[]`
-- `GET /api/v1/companies/:companyId`
-  - **Response**: `200 OK` — `Company`
-
-### 2.2 User Profiles & Demo Personas
-- `GET /api/v1/users`
-  - **Query Params**: `companyId?: string`
-  - **Response**: `200 OK` — `UserProfile[]`
-- `GET /api/v1/users/:userId`
-  - **Response**: `200 OK` — `UserProfile`
-- `PATCH /api/v1/users/:userId/signature`
-  - **Request Body**: `{ signatureDataUrl?: string, signatureStyleText?: string }`
-  - **Response**: `200 OK` — Updated `UserProfile`
-
-### 2.3 Workflows & Governance
-- `GET /api/v1/workflows`
-  - **Query Params**: `companyId: string`, `formType?: string`
-  - **Response**: `200 OK` — `WorkflowConfig[]`
-- `PUT /api/v1/workflows/:workflowId`
-  - **Request Body**: `WorkflowConfig`
-  - **Response**: `200 OK` — `WorkflowConfig`
-
-### 2.4 Request Records & Approvals
-- `GET /api/v1/requests`
-  - **Query Params**: `companyId: string`, `status?: RequestStatus`, `requesterId?: string`, `approverId?: string`
-  - **Response**: `200 OK` — `RequestRecord[]`
-- `GET /api/v1/requests/:requestId`
-  - **Response**: `200 OK` — `RequestRecord`
-- `POST /api/v1/requests`
-  - **Request Body**: `RequestRecord` (or initial submission payload)
-  - **Response**: `201 Created` — `RequestRecord`
-- `PUT /api/v1/requests/:requestId`
-  - **Request Body**: `RequestRecord` (updated approval state, history, and version snapshots)
-  - **Response**: `200 OK` — `RequestRecord`
-- `DELETE /api/v1/requests/:requestId`
-  - **Response**: `204 No Content`
-
-### 2.5 Draft Management
-- `GET /api/v1/drafts?companyId=...&formType=...`
-  - **Response**: `200 OK` — `Partial<AdminWorkFormData> | null`
-- `PUT /api/v1/drafts`
-  - **Request Body**: `{ companyId: string, formType: string, formData: Partial<AdminWorkFormData> }`
-  - **Response**: `200 OK`
-- `DELETE /api/v1/drafts?companyId=...&formType=...`
-  - **Response**: `204 No Content`
-
-### 2.6 File Attachments
-- `POST /api/v1/attachments/upload`
-  - **Multipart Form Data**: `file: File`, `requestId: string`
-  - **Response**: `201 Created` — `AttachmentItem`
+Client applications submit action intents with user credentials. The server:
+1. Loads the current request record from the database.
+2. Validates user session, tenant company context, and stage authorization.
+3. Computes the next stage, updates status, generates chronological `ApprovalHistoryItem` records with server timestamps (`now()`).
+4. Atomically commits the transition.
 
 ---
 
-## 3. Enterprise Authentication & SSO Architecture
+## 3. Server-Side REST Endpoints
 
-In the production deployment across Precision Engineering Group facilities (Riyadh, Dammam, Jubail, Jeddah), authentication must integrate with corporate identity providers.
+### 3.1 Authentication & Profile
+- `POST /api/auth/login`
+  - Body: `{ email, password }`
+  - Returns: JWT session token and `UserProfile`.
+- `GET /api/users`
+  - Query: `companyId`
+  - Returns: `UserProfile[]`
+- `PATCH /api/users/:id/signature`
+  - Body: `{ signatureDataUrl?: string, signatureStyleText?: string }`
+  - Updates saved user e-signature graphic and cursive representation.
 
-### 3.1 Recommended Identity Providers
-1. **Microsoft Entra ID (Azure AD)**:
-   - Primary enterprise IdP for Precision Engineering Group.
-   - Use OAuth 2.0 / OpenID Connect (OIDC) PKCE authorization code flow.
-   - Map Active Directory Security Groups to PreciSign roles:
-     - `SG_PRECISIGN_ADMIN` -> `Admin`
-     - `SG_PRECISIGN_GM` -> `General Manager`
-     - `SG_PRECISIGN_DIRECTORS` -> `Director`
-     - `SG_PRECISIGN_FINANCE` -> `Finance`
-     - `SG_PRECISIGN_PURCHASE` -> `Purchase`
-     - `SG_PRECISIGN_HR` -> `HR`
-     - `SG_PRECISIGN_IT` -> `IT`
-2. **Saudi National Single Sign-On (Nafath) & GOSI / Qiwa API Integration**:
-   - For statutory HR actions, Saudi citizen/resident verification, and Iqama validation.
+### 3.2 Discrete Workflow Operations (Server State Machine)
+- `POST /api/requests/submit`
+  - **Body**: `{ companyId, formType, formData, attachments, comment, signatureDataUrl }`
+  - **Server Logic**: Resolves active `WorkflowConfig` version for `(companyId, formType)`. Generates collision-resistant ID (`{COMPANY}-AW-{YEAR}-{SEQUENCE}-{ENTROPY}`). Sets `status = 'Pending Approval'`, `currentStageIndex = 0`. Adds initial `Submitted` history event. Stores Snapshot V1.
+  - **Returns**: `201 Created` with created `RequestRecord`.
 
-### 3.2 Session & Token Security
-- **JWT (JSON Web Tokens)**:
-  - Short-lived Access Tokens (15 minutes).
-  - HttpOnly, Secure, SameSite=Strict Refresh Tokens (7 days with rotation).
-  - Claims must include: `sub`, `email`, `name`, `role`, `companyId`, `permissions[]`.
+- `POST /api/requests/:id/approve`
+  - **Body**: `{ comment?: string, signatureDataUrl?: string }`
+  - **Server Verification**:
+    - Request must be in `Pending Approval` state.
+    - Authenticated user ID must match `request.approvalSteps[currentStageIndex].assignedUserId` (or assigned role within company).
+    - If `workflowConfig.preventSelfApproval === true`, reject if `user.id === request.requesterId` (`403 Forbidden`).
+    - Verify signer name is non-empty.
+  - **Server Transition**: Sets current step status to `'Approved'`. Appends approval history item with server timestamp. If final stage or stage maps to signature, records `approvalAuthoritySignatureName` and timestamp on document. Advances to next stage or marks `status = 'Approved'`.
 
----
+- `POST /api/requests/:id/return`
+  - **Body**: `{ reason: string }`
+  - **Server Verification**: Requires non-empty reason (`400 Bad Request`). User must be current approver or Director. Request must be in `Pending Approval`.
+  - **Server Transition**: Appends `Returned for Correction` history event. Sets `status = 'Returned for Correction'`.
 
-## 4. Server-Side Authorization & Anti-Tampering Rules
+- `POST /api/requests/:id/resubmit`
+  - **Body**: `{ formData: AdminWorkFormData, changeNote?: string, signatureDataUrl?: string }`
+  - **Server Verification**: User must be the original requester. Request must be in `Returned for Correction` state.
+  - **Server Transition**: Increments `documentVersion` (e.g. V1 -> V2). Saves new version snapshot into `versionSnapshots`. Resets approval steps according to workflow policy (`restart_workflow` -> stage 0). Sets `status = 'Pending Approval'`.
 
-The browser prototype performs optimistic client-side workflow validation. In production, **the backend must be the absolute authority** and strictly enforce the following security invariants:
+- `POST /api/requests/:id/reject`
+  - **Body**: `{ reason: string }`
+  - **Server Verification**: Non-empty reason required. User must be current approver or Director.
+  - **Server Transition**: Appends `Rejected` history item. Sets `status = 'Rejected'`.
 
-1. **Anti-Tampering Guard (Self-Approval Prohibition)**:
-   - If `workflowConfig.preventSelfApproval === true`, reject any approval request where `actingUserId === request.requesterId` with `403 Forbidden`.
-2. **Strict Assigned Approver Validation**:
-   - Verify that `actingUserId === request.currentApproverId` for the current stage.
-   - Reject attempts by unauthorized employees to approve requests.
-3. **Director Override Audit Guard**:
-   - Only users with role `Director` may trigger the override action.
-   - The backend must enforce that `reason` is non-empty and log an immutable entry into `approvalHistory` and system security audit logs.
-4. **Tenant Isolation**:
-   - All database queries must enforce tenant scoping (`WHERE company_id = :sessionCompanyId`).
-   - Prevent cross-tenant access between PEW, ICCL, and FSG.
-5. **Immutable History & Version Snapshots**:
-   - Once written, records in `approval_history` and `version_snapshots` cannot be updated or deleted by any user or administrator.
+- `POST /api/requests/:id/director-override`
+  - **Body**: `{ reason: string, signatureDataUrl?: string }`
+  - **Server Verification**:
+    - Policy check: `request.workflowConfig.allowDirectorOverride` must be `true`.
+    - Request must be in `Pending Approval` state.
+    - Authenticated user role must be `'Director'`.
+    - Mandatory non-empty justification `reason` required.
+    - Requester company must match Director company context.
+  - **Server Transition**: Marks skipped intermediate stages as `'Bypassed'`. Marks Director stage as `'Approved'`. Sets `status = 'Approved'`. Records Director signature on document. Appends `Director Override` history item.
 
----
+### 3.3 Request Queries & Drafts
+- `GET /api/requests`
+  - Query params: `companyId`, `status`, `filter` (`'pending' | 'my' | 'all' | 'approved'`)
+  - Server applies tenant filtering (`WHERE company_id = :companyId`).
+- `GET /api/requests/:id`
+  - Returns full `RequestRecord` including `approvalHistory`, `versionSnapshots`, and `approvalSteps`.
+- `GET /api/drafts`
+  - Query: `companyId`, `requesterId`, `formType`
+  - Returns saved draft form data.
+- `PUT /api/drafts`
+  - Body: `{ companyId, requesterId, formType, formData }`
+- `DELETE /api/drafts`
+  - Query: `companyId`, `requesterId`, `formType`
 
-## 5. Audit Integrity & Cryptographic Electronic Signing (Saudi Compliance)
-
-Under Saudi Arabia's **Electronic Transactions Law (Royal Decree No. M/18)** and regulations issued by the **Digital Government Authority (DGA)** and **Communications, Space & Technology Commission (CSTC)**, corporate approval documents require cryptographic non-repudiation.
-
-### 5.1 Document Cryptographic Hashing
-Upon each submission, approval, or completion:
-1. Generate canonical JSON representation of the document fields.
-2. Calculate SHA-256 digest of the canonical document + all uploaded attachments:
-   $$\text{DocumentHash} = \text{SHA-256}(\text{CanonicalJSON} \parallel \text{AttachmentHashes})$$
-3. Store `DocumentHash` in the immutable audit log table.
-
-### 5.2 Digital Signature & PKI Architecture
-1. **Hardware Security Module (HSM) / Cloud KMS**:
-   - Corporate signing keys stored in FIPS 140-2 Level 3 HSM (e.g. AWS CloudHSM, Azure Key Vault Managed HSM, or Google Cloud KMS).
-   - Use X.509 digital certificates issued by a trusted Saudi Root CA.
-2. **PAdES (PDF Advanced Electronic Signatures)**:
-   - When generating the final approved PDF, embed a PAdES-compliant digital signature.
-   - Include RFC 3161 compliant cryptographic Timestamp Authority (TSA) proof.
-   - Any modification to the PDF post-signing invalidates the cryptographic signature in Adobe Acrobat / PDF readers.
-3. **Verification QR Code**:
-   - Render a secure QR code on the footer of the generated PDF linking to:
-     `https://precisign.precision-eg.com/verify?id={requestId}&hash={hashPrefix}`
-   - The public verification page displays:
-     - Document Format: `PR#21-001FA (Admin Work Request)`
-     - Company: `PEW - Precision Engineering Works`
-     - Requester & Submission Timestamp
-     - Full Chronological Approver Signatures & Certificates
-     - Cryptographic Validity Status: `VALID / UNTAMPERED`
+### 3.4 Workflows Management
+- `GET /api/workflows`
+  - Query: `companyId`, `formType?`
+- `PUT /api/workflows/:id`
+  - **Server Verification**: User role must be `'Admin'`. Stages must have $\ge 1$ stage, exactly 1 final approval stage, and exactly 1 signature mapped stage.
+  - **Server Transition**: Increments `version`. New version applies only to new requests. In-flight requests remain bound to their creation workflow version.
 
 ---
 
-## 6. Server-Side PDF Generation Pipeline
+## 4. Database Schema (PostgreSQL DDL)
 
-While the frontend supports standard browser printing via CSS `@media print`, enterprise archive and external regulatory submission require automated, certified PDF generation:
+```sql
+-- 1. Companies / Operating Subsidiaries
+CREATE TABLE companies (
+  id VARCHAR(10) PRIMARY KEY, -- 'PEW', 'ICCL', 'FSG'
+  code VARCHAR(10) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  full_name VARCHAR(255) NOT NULL,
+  group_name VARCHAR(100) DEFAULT 'PRECISION ENGINEERING GROUP'
+);
 
-1. **Rendering Engine**:
-   - Headless Chromium (Playwright / Puppeteer in serverless container) or WeasyPrint.
-   - Dimensions: Standard ISO A4 ($210\text{ mm} \times 297\text{ mm}$), zero browser margins.
-2. **Asset Embedding**:
-   - Embed web fonts directly into the PDF:
-     - Arabic: `Cairo (Regular, SemiBold, Bold)`
-     - English: `Plus Jakarta Sans`
-     - Handwritten E-Sign: `Caveat`
-   - High-resolution SVG Precision Engineering Group logo.
-3. **Archival Storage**:
-   - Save generated PDFs to S3-compatible Object Storage (e.g., MinIO or AWS S3 with Object Lock enabled for WORM / Write Once Read Many compliance).
-   - Filename convention: `{COMPANY}_{FORM_CODE}_{REQUEST_ID}_V{VERSION}.pdf`.
+-- 2. Users
+CREATE TABLE users (
+  id VARCHAR(50) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(150) UNIQUE NOT NULL,
+  role VARCHAR(50) NOT NULL, -- 'Admin', 'Director', 'General Manager', etc.
+  department VARCHAR(100) NOT NULL,
+  company_id VARCHAR(10) REFERENCES companies(id),
+  initials VARCHAR(5),
+  avatar_color VARCHAR(10),
+  signature_style_text VARCHAR(100),
+  signature_data_url TEXT
+);
 
----
+-- 3. Workflow Configurations
+CREATE TABLE workflow_configs (
+  id VARCHAR(50) PRIMARY KEY,
+  company_id VARCHAR(10) REFERENCES companies(id),
+  form_type VARCHAR(100) NOT NULL,
+  version INT NOT NULL DEFAULT 1,
+  prevent_self_approval BOOLEAN DEFAULT TRUE,
+  allow_director_override BOOLEAN DEFAULT TRUE,
+  reminder_days INT DEFAULT 2,
+  escalation_days INT DEFAULT 5,
+  rejection_behavior VARCHAR(50) DEFAULT 'archive',
+  return_behavior VARCHAR(50) DEFAULT 'restart_workflow',
+  stages JSONB NOT NULL, -- Array of WorkflowStageConfig
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-## 7. Real-Time Notifications & Integration Webhooks
+-- 4. Requests
+CREATE TABLE requests (
+  id VARCHAR(60) PRIMARY KEY, -- E.g. 'PEW-AW-2026-0018-X4K2'
+  form_type VARCHAR(100) NOT NULL,
+  company_id VARCHAR(10) REFERENCES companies(id),
+  title VARCHAR(255) NOT NULL,
+  requester_id VARCHAR(50) REFERENCES users(id),
+  requester_name VARCHAR(100) NOT NULL,
+  requester_role VARCHAR(50) NOT NULL,
+  department VARCHAR(100) NOT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'Pending Approval',
+  current_stage_index INT DEFAULT 0,
+  current_approver_id VARCHAR(50) REFERENCES users(id),
+  workflow_version INT NOT NULL,
+  document_version INT NOT NULL DEFAULT 1,
+  form_data JSONB NOT NULL,
+  approval_steps JSONB NOT NULL,
+  approval_history JSONB NOT NULL, -- Immutable chronological array
+  version_snapshots JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-Configure the event broker (Kafka, RabbitMQ, or AWS SNS/SQS) with the following triggers:
+-- 5. Attachments
+CREATE TABLE attachments (
+  id VARCHAR(60) PRIMARY KEY,
+  request_id VARCHAR(60) REFERENCES requests(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  size_bytes BIGINT NOT NULL,
+  size_formatted VARCHAR(20) NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  storage_path TEXT NOT NULL,
+  uploaded_by VARCHAR(100) NOT NULL,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-| Event Type | Recipient | Channels | Content |
-|---|---|---|---|
-| `REQUEST_SUBMITTED` | Stage 1 Approver | Email, MS Teams | New request pending your review. |
-| `STAGE_APPROVED` | Next Stage Approver | Email, MS Teams | Prior stage approved; your review is now required. |
-| `STAGE_APPROVED` | Requester | In-App, Email | Step approved by [Approver Name]. |
-| `RETURNED_FOR_CORRECTION` | Requester | Email, MS Teams, SMS | Request returned with notes. Edit and resubmit. |
-| `REQUEST_REJECTED` | Requester & Approvers | Email, In-App | Request has been rejected with justification. |
-| `REQUEST_COMPLETED` | Admin Operations Team | Email, Webhook | Final approval completed. Execute government portal actions (Qiwa, Muqeem, Gosi). |
-
----
-
-## 8. Transition Guide: Switching from LocalStorage to API Repository
-
-To replace the prototype mock store with the production REST/GraphQL client:
-
-### Step 1: Create `src/services/apiRepository.ts`
-```typescript
-import { IPreciSignRepository } from './repository';
-import { Company, UserProfile, WorkflowConfig, RequestRecord, AdminWorkFormData, CompanyId } from '../types';
-
-export class ApiPreciSignRepository implements IPreciSignRepository {
-  private baseUrl = import.meta.env.VITE_API_URL || '/api/v1';
-
-  private async fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-    const token = localStorage.getItem('precisign_auth_token');
-    const res = await fetch(`${this.baseUrl}${url}`, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...init?.headers,
-      },
-    });
-    if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
-    return res.json();
-  }
-
-  async getCompanies(): Promise<Company[]> {
-    return this.fetchJson<Company[]>('/companies');
-  }
-
-  async getUsers(companyId?: CompanyId): Promise<UserProfile[]> {
-    const q = companyId ? `?companyId=${companyId}` : '';
-    return this.fetchJson<UserProfile[]>(`/users${q}`);
-  }
-
-  async updateUserSignature(userId: string, signatureDataUrl?: string, signatureStyleText?: string): Promise<UserProfile> {
-    return this.fetchJson<UserProfile>(`/users/${userId}/signature`, {
-      method: 'PATCH',
-      body: JSON.stringify({ signatureDataUrl, signatureStyleText }),
-    });
-  }
-
-  async getWorkflows(companyId?: CompanyId): Promise<WorkflowConfig[]> {
-    const q = companyId ? `?companyId=${companyId}` : '';
-    return this.fetchJson<WorkflowConfig[]>(`/workflows${q}`);
-  }
-
-  async saveWorkflow(config: WorkflowConfig): Promise<WorkflowConfig> {
-    return this.fetchJson<WorkflowConfig>(`/workflows/${config.id}`, {
-      method: 'PUT',
-      body: JSON.stringify(config),
-    });
-  }
-
-  async getRequests(companyId?: CompanyId): Promise<RequestRecord[]> {
-    const q = companyId ? `?companyId=${companyId}` : '';
-    return this.fetchJson<RequestRecord[]>(`/requests${q}`);
-  }
-
-  async getRequestById(id: string): Promise<RequestRecord | null> {
-    try {
-      return await this.fetchJson<RequestRecord>(`/requests/${id}`);
-    } catch {
-      return null;
-    }
-  }
-
-  async createRequest(record: RequestRecord): Promise<RequestRecord> {
-    return this.fetchJson<RequestRecord>('/requests', {
-      method: 'POST',
-      body: JSON.stringify(record),
-    });
-  }
-
-  async updateRequest(record: RequestRecord): Promise<RequestRecord> {
-    return this.fetchJson<RequestRecord>(`/requests/${record.id}`, {
-      method: 'PUT',
-      body: JSON.stringify(record),
-    });
-  }
-
-  async getDraft(companyId: CompanyId, formType: string): Promise<Partial<AdminWorkFormData> | null> {
-    return this.fetchJson<Partial<AdminWorkFormData> | null>(`/drafts?companyId=${companyId}&formType=${encodeURIComponent(formType)}`);
-  }
-
-  async saveDraft(companyId: CompanyId, formType: string, data: Partial<AdminWorkFormData>): Promise<void> {
-    await this.fetchJson('/drafts', {
-      method: 'PUT',
-      body: JSON.stringify({ companyId, formType, formData: data }),
-    });
-  }
-
-  async clearDraft(companyId: CompanyId, formType: string): Promise<void> {
-    await this.fetchJson(`/drafts?companyId=${companyId}&formType=${encodeURIComponent(formType)}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getDemoSession() {
-    return { companyId: 'PEW' as CompanyId, userId: 'user-afzal' };
-  }
-
-  async saveDemoSession() {}
-
-  async resetToSeedData(): Promise<void> {
-    await this.fetchJson('/admin/reset-demo-data', { method: 'POST' });
-  }
-}
+-- 6. Drafts (Scoped by company, requester, and form)
+CREATE TABLE drafts (
+  company_id VARCHAR(10) REFERENCES companies(id),
+  requester_id VARCHAR(50) REFERENCES users(id),
+  form_type VARCHAR(100) NOT NULL,
+  form_data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (company_id, requester_id, form_type)
+);
 ```
 
-### Step 2: Swap the Instance in `src/services/repository.ts`
-Change line 166:
-```typescript
-// Replace:
-export const dataService: IPreciSignRepository = new LocalStoragePreciSignRepository();
+---
 
-// With:
-export const dataService: IPreciSignRepository = new ApiPreciSignRepository();
-```
+## 5. Frontend Integration Switch
 
-Because all React Context operations, forms, and approval hooks strictly consume `dataService`, **no UI files require refactoring**.
+When the backend is implemented:
+1. Implement `src/services/apiRepository.ts` adhering to `IPreciSignRepository`.
+2. In `src/services/repository.ts`:
+   ```typescript
+   export const dataService: IPreciSignRepository = new ApiPreciSignRepository();
+   ```
+3. Because all components consume `useApp()` and `dataService`, zero presentation component rewrites will be required.

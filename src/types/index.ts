@@ -56,7 +56,7 @@ export interface AdminWorkFormData {
   workDescription: string;
   documents: AdminWorkFormChecklist;
   // Signatures on paper document
-  requesterSignatureName: string;
+  requesterSignatureName?: string;
   requesterSignatureDate?: string;
   requesterSignatureDataUrl?: string;
   approvalAuthoritySignatureName?: string;
@@ -133,6 +133,7 @@ export interface AttachmentItem {
   uploadedAt: string;
   uploadedBy: string;
   mimeType: string;
+  dataUrl?: string;
 }
 
 export interface RequestRecord {

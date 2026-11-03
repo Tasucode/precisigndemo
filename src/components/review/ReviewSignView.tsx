@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { AdminWorkFormData } from '../../types/index';
 import { AdminWorkRequestDocument } from '../document/AdminWorkRequestDocument';
 import { SignatureModal } from '../modals/SignatureModal';
 import {
@@ -49,8 +50,8 @@ export const ReviewSignView: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  // Correction form state if resubmitting
-  const [correctedDescription, setCorrectedDescription] = useState(request ? request.formData.workDescription : '');
+  // Full correction form state if resubmitting
+  const [correctedForm, setCorrectedForm] = useState<AdminWorkFormData>(request ? request.formData : ({} as any));
 
   if (!request) {
     return (
@@ -89,6 +90,40 @@ export const ReviewSignView: React.FC = () => {
     navigator.clipboard?.writeText(request.id);
     setActionSuccess('Request ID copied to clipboard');
     setTimeout(() => setActionSuccess(null), 2500);
+  };
+
+  const handleViewAttachment = (att: any) => {
+    if (att.dataUrl) {
+      const win = window.open();
+      if (win) {
+        win.document.write(
+          `<iframe src="${att.dataUrl}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`
+        );
+      }
+    } else {
+      setActionSuccess(
+        `Prototype note: "${att.name}" is a sample reference item without local binary data. Upload a real file on Create Request to preview content.`
+      );
+      setTimeout(() => setActionSuccess(null), 4000);
+    }
+  };
+
+  const handleDownloadAttachment = (att: any) => {
+    if (att.dataUrl) {
+      const a = document.createElement('a');
+      a.href = att.dataUrl;
+      a.download = att.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setActionSuccess(`Downloaded ${att.name}`);
+      setTimeout(() => setActionSuccess(null), 3000);
+    } else {
+      setActionError(
+        `Prototype note: Binary data for "${att.name}" is not stored in this browser session. Upload a real file on Create Request to test download.`
+      );
+      setTimeout(() => setActionError(null), 4000);
+    }
   };
 
   const handleApproveClick = () => {
@@ -160,13 +195,9 @@ export const ReviewSignView: React.FC = () => {
   };
 
   const handleResubmitAction = () => {
-    const updatedForm = {
-      ...request.formData,
-      workDescription: correctedDescription,
-    };
     const result = resubmitRequest(
       request.id,
-      updatedForm,
+      correctedForm,
       actionReason || 'Corrected per approver feedback'
     );
     if (result.success) {
@@ -182,7 +213,7 @@ export const ReviewSignView: React.FC = () => {
   return (
     <div className="p-8 max-w-[1700px] mx-auto space-y-6">
       {/* Breadcrumb Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+      <div className="no-print flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-slate-500 mb-1">
             <button
@@ -237,7 +268,7 @@ export const ReviewSignView: React.FC = () => {
       {/* Main Split Layout: Left 32% (4 cols) & Right 68% (8 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT PANEL: 32% Approval Controls */}
-        <div className="lg:col-span-4 space-y-4">
+        <div className="no-print lg:col-span-4 space-y-4">
           {/* Card: Document Type & Status Header */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 shadow-xs">
             <div className="flex items-start justify-between">
@@ -424,23 +455,23 @@ export const ReviewSignView: React.FC = () => {
                       className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs"
                     >
                       <div className="flex items-center gap-2 truncate">
-                        <span className="text-[10px] font-bold bg-red-100 text-red-700 px-1 py-0.5 rounded uppercase">
-                          PDF
+                        <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded uppercase">
+                          {att.name.split('.').pop() || 'FILE'}
                         </span>
                         <span className="font-medium text-slate-800 truncate">{att.name}</span>
                         <span className="text-[10px] text-slate-400">({att.sizeFormatted})</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => alert(`Simulated document viewer for: ${att.name}`)}
-                          className="p-1 text-slate-500 hover:text-slate-800"
+                          onClick={() => handleViewAttachment(att)}
+                          className="p-1 text-slate-500 hover:text-slate-800 cursor-pointer"
                           title="Preview attachment"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => alert(`Downloading attachment: ${att.name}`)}
-                          className="p-1 text-slate-500 hover:text-slate-800"
+                          onClick={() => handleDownloadAttachment(att)}
+                          className="p-1 text-slate-500 hover:text-slate-800 cursor-pointer"
                           title="Download attachment"
                         >
                           <Download className="w-3.5 h-3.5" />
@@ -531,10 +562,11 @@ export const ReviewSignView: React.FC = () => {
                   </div>
                   <button
                     onClick={() => {
-                      setCorrectedDescription(request.formData.workDescription);
+                      setCorrectedForm({ ...request.formData });
+                      setActionReason('');
                       setActionModal('resubmit');
                     }}
-                    className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5"
+                    className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                   >
                     <Send className="w-4 h-4" />
                     <span>Edit &amp; Resubmit New Version</span>
@@ -556,7 +588,7 @@ export const ReviewSignView: React.FC = () => {
           }`}
         >
           {/* Document Toolbar */}
-          <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="no-print bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-3">
               <span className="text-xs font-bold text-slate-800">
                 Document Preview ({request.status})
@@ -607,24 +639,15 @@ export const ReviewSignView: React.FC = () => {
                 </button>
               </div>
 
-              {/* Print */}
+              {/* Print / Save as PDF */}
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                title="Print official document or Save as PDF"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print</span>
-              </button>
-
-              {/* Download */}
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
+                <span>Print / Save as PDF (A4)</span>
               </button>
 
               {/* Fullscreen */}
@@ -660,8 +683,8 @@ export const ReviewSignView: React.FC = () => {
 
       {/* Action Modals: Return / Reject / Override / Resubmit */}
       {actionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 border border-slate-200 my-8">
             <h3 className="text-base font-bold text-slate-900">
               {actionModal === 'return'
                 ? 'Return Request for Correction'
@@ -669,28 +692,185 @@ export const ReviewSignView: React.FC = () => {
                 ? 'Reject Request'
                 : actionModal === 'override'
                 ? 'Director Override Approval'
-                : 'Resubmit Corrected Request'}
+                : 'Resubmit Corrected Request (New Version)'}
             </h3>
 
             {actionModal === 'resubmit' ? (
-              <div className="space-y-3">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Updated Work Description:
-                </label>
-                <textarea
-                  rows={3}
-                  value={correctedDescription}
-                  onChange={(e) => setCorrectedDescription(e.target.value)}
-                  className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-                <label className="block text-xs font-semibold text-slate-700">Change Note:</label>
-                <input
-                  type="text"
-                  placeholder="Explain corrections made..."
-                  value={actionReason}
-                  onChange={(e) => setActionReason(e.target.value)}
-                  className="w-full p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 text-xs">
+                {/* Priority Selection */}
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Priority Level:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['Urgent', 'Medium', 'Low'] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setCorrectedForm((prev) => ({ ...prev, priority: p }))}
+                        className={`py-1.5 px-2 rounded-lg border font-semibold text-xs ${
+                          correctedForm.priority === p
+                            ? 'border-purple-600 bg-purple-50 text-purple-700'
+                            : 'border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Department & Date */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-slate-700">Department:</label>
+                    <input
+                      type="text"
+                      value={correctedForm.department || ''}
+                      onChange={(e) =>
+                        setCorrectedForm((prev) => ({ ...prev, department: e.target.value }))
+                      }
+                      className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-slate-700">Date of Request:</label>
+                    <input
+                      type="text"
+                      value={correctedForm.dateOfRequest || ''}
+                      onChange={(e) =>
+                        setCorrectedForm((prev) => ({ ...prev, dateOfRequest: e.target.value }))
+                      }
+                      className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Work Description */}
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Work Description:</label>
+                  <textarea
+                    rows={3}
+                    value={correctedForm.workDescription || ''}
+                    onChange={(e) =>
+                      setCorrectedForm((prev) => ({ ...prev, workDescription: e.target.value }))
+                    }
+                    className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+
+                {/* Checklist Corrections */}
+                <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                  <label className="font-semibold text-slate-700">Documents Checklist:</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px]">
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={correctedForm.documents?.onlineDocumentChamber || false}
+                        onChange={(e) =>
+                          setCorrectedForm((prev) => ({
+                            ...prev,
+                            documents: {
+                              ...prev.documents,
+                              onlineDocumentChamber: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>1. Online Chamber</span>
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={correctedForm.documents?.physicalDocumentChamber || false}
+                        onChange={(e) =>
+                          setCorrectedForm((prev) => ({
+                            ...prev,
+                            documents: {
+                              ...prev.documents,
+                              physicalDocumentChamber: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>2. Physical Chamber</span>
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={correctedForm.documents?.companyDocumentAjeer || false}
+                        onChange={(e) =>
+                          setCorrectedForm((prev) => ({
+                            ...prev,
+                            documents: {
+                              ...prev.documents,
+                              companyDocumentAjeer: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>3. Ajeer Document</span>
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={correctedForm.documents?.employeeSalaryCertificate || false}
+                        onChange={(e) =>
+                          setCorrectedForm((prev) => ({
+                            ...prev,
+                            documents: {
+                              ...prev.documents,
+                              employeeSalaryCertificate: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>4. Salary Certificate</span>
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={correctedForm.documents?.permanentEmploymentVisa || false}
+                        onChange={(e) =>
+                          setCorrectedForm((prev) => ({
+                            ...prev,
+                            documents: {
+                              ...prev.documents,
+                              permanentEmploymentVisa: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>5. Employment Visa</span>
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={correctedForm.documents?.workVisitVisa || false}
+                        onChange={(e) =>
+                          setCorrectedForm((prev) => ({
+                            ...prev,
+                            documents: {
+                              ...prev.documents,
+                              workVisitVisa: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>6. Work Visit Visa</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Change Note */}
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <label className="font-semibold text-slate-700">Change Note (Required):</label>
+                  <input
+                    type="text"
+                    placeholder="Describe corrections made (e.g., Attached revised quote and adjusted timeline)..."
+                    value={actionReason}
+                    onChange={(e) => setActionReason(e.target.value)}
+                    className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
@@ -714,7 +894,7 @@ export const ReviewSignView: React.FC = () => {
                   setActionModal(null);
                   setActionReason('');
                 }}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
               >
                 Cancel
               </button>
@@ -726,7 +906,7 @@ export const ReviewSignView: React.FC = () => {
                   if (actionModal === 'override') handleOverrideSubmit();
                   if (actionModal === 'resubmit') handleResubmitAction();
                 }}
-                className={`px-4 py-2 text-xs font-semibold text-white rounded-lg ${
+                className={`px-4 py-2 text-xs font-semibold text-white rounded-lg cursor-pointer ${
                   actionModal === 'reject'
                     ? 'bg-red-600 hover:bg-red-700'
                     : actionModal === 'return'

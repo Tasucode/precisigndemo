@@ -107,6 +107,7 @@ export function approveRequestStage(params: {
 }): { success: boolean; error?: string; updatedRequest?: RequestRecord } {
   const { request, actingUser, comment, signatureDataUrl } = params;
 
+  // 1. Allowed workflow state
   if (request.status !== 'Pending Approval') {
     return { success: false, error: `Request cannot be approved in '${request.status}' state.` };
   }
@@ -116,7 +117,7 @@ export function approveRequestStage(params: {
     return { success: false, error: 'No active approval stage found.' };
   }
 
-  // Authorization check: must be assigned approver or have override role
+  // 2. Authorization check: must be assigned approver
   const isAssigned = currentStep.assignedUserId === actingUser.id;
   if (!isAssigned) {
     return {
@@ -125,12 +126,23 @@ export function approveRequestStage(params: {
     };
   }
 
-  // Prevent self approval check
-  if (request.workflowConfig.preventSelfApproval && request.requesterId === actingUser.id) {
+  // 3. Valid company context
+  if (actingUser.companyId && request.companyId && actingUser.companyId !== request.companyId) {
+    return { success: false, error: 'Unauthorized: User belongs to a different company.' };
+  }
+
+  // 4. Prevent self approval check
+  if (request.workflowConfig?.preventSelfApproval && request.requesterId === actingUser.id) {
     return {
       success: false,
       error: 'Self-approval is prohibited by organization policy.',
     };
+  }
+
+  // 5. Require confirmed signer identity
+  const effectiveSignerName = actingUser.name?.trim();
+  if (!effectiveSignerName) {
+    return { success: false, error: 'Signer identity is required for approval.' };
   }
 
   const now = new Date().toISOString();
@@ -144,7 +156,7 @@ export function approveRequestStage(params: {
         ...step,
         status: 'Approved' as const,
         actionDate: now,
-        comments: comment,
+        comments: comment?.trim() || undefined,
         signatureDataUrl: signatureDataUrl || actingUser.signatureDataUrl,
       };
     }
@@ -165,13 +177,13 @@ export function approveRequestStage(params: {
     actionByRole: actingUser.role,
     action: 'Approved',
     dateTime: now,
-    comments: comment || 'Checked and approved.',
+    comments: comment?.trim() || 'Checked and approved.',
     version: request.documentVersion,
   };
 
   const updatedFormData: AdminWorkFormData = { ...request.formData };
   // Check if this stage maps to document signature or is final stage
-  const currentStageConfig = request.workflowConfig.stages[request.currentStageIndex];
+  const currentStageConfig = request.workflowConfig?.stages?.[request.currentStageIndex];
   if (isFinalStage || currentStageConfig?.mapsToDocumentSignature) {
     updatedFormData.approvalAuthoritySignatureName = actingUser.name;
     updatedFormData.approvalAuthoritySignatureDate = now;
@@ -214,6 +226,10 @@ export function returnRequestForCorrection(params: {
   const currentStep = request.approvalSteps[request.currentStageIndex];
   if (currentStep?.assignedUserId !== actingUser.id && actingUser.role !== 'Director') {
     return { success: false, error: 'Only the assigned approver or Director can return for correction.' };
+  }
+
+  if (actingUser.companyId && request.companyId && actingUser.companyId !== request.companyId) {
+    return { success: false, error: 'Unauthorized: User belongs to a different company.' };
   }
 
   const now = new Date().toISOString();
@@ -287,7 +303,7 @@ export function resubmitCorrectedRequest(params: {
     actionByRole: actingUser.role,
     action: 'Submitted',
     dateTime: now,
-    comments: changeNote ? `Resubmitted: ${changeNote}` : `Resubmitted Version ${nextVersion}`,
+    comments: changeNote ? `Resubmitted: ${changeNote.trim()}` : `Resubmitted Version ${nextVersion}`,
     version: nextVersion,
   };
 
@@ -311,7 +327,7 @@ export function resubmitCorrectedRequest(params: {
         updatedAt: now,
         updatedBy: actingUser.name,
         formData: enrichedFormData,
-        changeNote: changeNote || `Version ${nextVersion} corrections`,
+        changeNote: changeNote?.trim() || `Version ${nextVersion} corrections`,
       },
     ],
   };
@@ -337,6 +353,10 @@ export function rejectRequest(params: {
   const currentStep = request.approvalSteps[request.currentStageIndex];
   if (currentStep?.assignedUserId !== actingUser.id && actingUser.role !== 'Director') {
     return { success: false, error: 'Only the assigned approver or Director can reject.' };
+  }
+
+  if (actingUser.companyId && request.companyId && actingUser.companyId !== request.companyId) {
+    return { success: false, error: 'Unauthorized: User belongs to a different company.' };
   }
 
   const now = new Date().toISOString();
@@ -385,12 +405,37 @@ export function directorOverrideApprove(params: {
 }): { success: boolean; error?: string; updatedRequest?: RequestRecord } {
   const { request, directorUser, reason } = params;
 
+  // 1. Director Override must fail when allowDirectorOverride is false
+  if (!request.workflowConfig?.allowDirectorOverride) {
+    return { success: false, error: 'Director Override is disabled by workflow policy.' };
+  }
+
+  // 2. Director Override must fail when the request is already Approved, Rejected, or Returned
+  if (request.status !== 'Pending Approval') {
+    return {
+      success: false,
+      error: `Director Override cannot be executed on a request in '${request.status}' state.`,
+    };
+  }
+
+  // 3. Require the correct actor (role must be Director)
   if (directorUser.role !== 'Director') {
     return { success: false, error: 'Only an authorized Director can execute an override.' };
   }
 
+  // 4. Require non-empty reason
   if (!reason || !reason.trim()) {
     return { success: false, error: 'A mandatory justification reason is required for Director Override.' };
+  }
+
+  // 5. Require valid company context
+  if (directorUser.companyId && request.companyId && directorUser.companyId !== request.companyId) {
+    return { success: false, error: 'Unauthorized: Director belongs to a different company.' };
+  }
+
+  // 6. Explicitly confirmed signer identity
+  if (!directorUser.name?.trim()) {
+    return { success: false, error: 'Signer identity is required for Director Override.' };
   }
 
   const now = new Date().toISOString();

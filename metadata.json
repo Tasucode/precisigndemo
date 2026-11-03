@@ -1,0 +1,6 @@
+{
+  "name": "PreciSign — Document Approval & E-Sign",
+  "description": "Internal document approval, bilingual workflow routing, and e-signature application for Precision Engineering Group.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
